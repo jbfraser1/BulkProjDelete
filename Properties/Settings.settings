@@ -1,0 +1,15 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="BulkProjectDelete.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="ProjectDelete_QueueSystemWebSvc_QueueSystem" Type="(Web Service URL)" Scope="Application">
+      <Value Profile="(Default)">http://mazzdev_2k8_vs/pwa/_vti_bin/psi/QueueSystem.asmx</Value>
+    </Setting>
+    <Setting Name="ProjectDelete_ProjectWebSvc_Project" Type="(Web Service URL)" Scope="Application">
+      <Value Profile="(Default)">http://mazzdev_2k8_vs/pwa/_vti_bin/psi/project.asmx</Value>
+    </Setting>
+    <Setting Name="ProjectDelete_ArchiveWebSvc_Archive" Type="(Web Service URL)" Scope="Application">
+      <Value Profile="(Default)">http://mazzdev_2k8_vs/pwa/_vti_bin/psi/Archive.asmx</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
