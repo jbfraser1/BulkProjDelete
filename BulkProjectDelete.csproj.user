@@ -2,4 +2,7 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <StartArguments>-url http://corppsvs/pwa -inputfile D:\dev\Jamie\ProjectDelete\ProjectDelete\ProjectNames.txt -deleteArchived -wait</StartArguments>
   </PropertyGroup>
+  <PropertyGroup>
+    <ReferencePath>D:\dev\references\</ReferencePath>
+  </PropertyGroup>
 </Project>

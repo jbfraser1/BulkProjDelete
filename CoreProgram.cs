@@ -15,25 +15,25 @@ namespace BulkProjectDelete
     class CoreProgram
     {
         static String usageHelp
-         = "Deletes Projects from a Project Server.\n\n"
-            + "Usage: DeleteProjects -url http[s]://PWAServer/pwa/ -inputfile path\\filename\n"
-            + "       [-deletewsssites] [-deletearchived] [-wait] [-verify]\n\n"
-            + "Options:\n"
-            + "   -url pwaurl      Specify the url for the PWA instance on which to delete\n"
-            + "                       sites. Required.\n"
-            + "   -inputfile path  Specify a text file listing projects to be deleted.\n"
-            + "                       Each project should be on a separate line. Required.\n"
-            + "   -deletewsssites  WSS sites related to the deleted projects will be\n"
-            + "                       deleted as well. Ignored if -deletearchived is used.\n"
-            + "   -deletearchived  The projects are deleted from the archive database. If\n"
-            + "                       not present, projects are deleted from the draft and\n"
-            + "                       published databases.\n"
-            + "   -wait            Execution will pause until Project Server processes\n"
-            + "                      each job.\n"
-            + "   -verify          Command will not actually delete projects or WSS sites.\n\n"
-            + "Example:\n"
-            + "   deleteprojects -url https://server/pwa/ -file c:\\temp\\oldprojects.txt\n"
-            + "         -deletewsssites\n\n";
+         = "Deletes Projects from a Project Server.\r\n\r\n"
+            + "Usage: BulkProjectDelete -url http[s]://PWAServer/pwa/ -inputfile path\\filename\r\n"
+            + "       [-deletewsssites] [-deletearchived] [-wait] [-verify]\r\n\r\n"
+            + "Options:\r\n"
+            + "   -url pwaurl      Specify the url for the PWA instance on which to delete\r\n"
+            + "                       sites. Required.\r\n"
+            + "   -inputfile path  Specify a text file listing projects to be deleted.\r\n"
+            + "                       Each project should be on a separate line. Required.\r\n"
+            + "   -deletewsssites  WSS sites related to the deleted projects will be\r\n"
+            + "                       deleted as well. Ignored if -deletearchived is used.\r\n"
+            + "   -deletearchived  The projects are deleted from the archive database. If\r\n"
+            + "                       not present, projects are deleted from the draft and\r\n"
+            + "                       published databases.\r\n"
+            + "   -wait            Execution will pause until Project Server processes\r\n"
+            + "                      each job.\r\n"
+            + "   -verify          Command will not actually delete projects or WSS sites.\r\n\r\n"
+            + "Example:\r\n"
+            + "   deleteprojects -url https://server/pwa/ -file c:\\temp\\oldprojects.txt\r\n"
+            + "         -deletewsssites\r\n\r\n";
 
 
         static string projectServerUrl = ""; // will include a trailing slash and should have pwa instance.
@@ -49,19 +49,110 @@ namespace BulkProjectDelete
         static List<string> ProjectNames = new List<string>();
         static List<Guid> ProjectGuids = new List<Guid>();
         static List<Guid> ProjectVersionGuids = new List<Guid>();
+        static int projectsNotFound = 0;
 
 
         const string PROJECT_SERVICE_PATH = "_vti_bin/psi/project.asmx";
         const string QUEUESYSTEM_SERVICE_PATH = "_vti_bin/psi/queuesystem.asmx";
         const string PROJECT_ARCHIVE_PATH = "_vti_bin/psi/Archive.asmx";
 
+        static ProjectWebSvc.Project projectSvc;
+        static QueueSystemWebSvc.QueueSystem queueSvc;
+        static ArchiveWebSvc.Archive archiveSvc;
 
         [STAThread]
         static void Main(string[] args)
         {
 
-            //validate arguments
-            #region Parse Arguments
+            if (!ParseArgs(args))
+            {
+                Console.WriteLine(usageHelp);
+            }
+            else
+            {
+                try  //need to move these handlers into the methods
+                {
+                    SetupWebSvc();
+
+                    ReadProjectsFromServer();
+
+                    ReadInputFile();
+
+                    WriteSummary();
+
+                    if (verify)
+                    {
+                        Console.WriteLine("!!! No deletions performed! Verifying only.");
+                    } else if (ProjectNames.Count == 0)
+                    {
+                        Console.WriteLine("No projects found to delete.");
+
+                    } else if (Confirm())
+                    {
+                        DeleteProjects();
+                    }
+                    else
+                    {
+                        Console.WriteLine("Deletion aborted.");
+                    }
+
+                    Console.WriteLine("Execution Complete.");
+                }
+                #region Error handling and finally
+                    // need to move this into the individual methods, handle errors there with more specific messages.
+                catch (SoapException ex)
+                {
+                    PSLibrary.PSClientError error = new PSLibrary.PSClientError(ex);
+                    PSLibrary.PSErrorInfo[] errors = error.GetAllErrors();
+                    string errMess = "==============================\r\nError: \r\n";
+                    foreach (PSLibrary.PSErrorInfo suberror in errors)
+                    {
+                        errMess += "\r\n" + ex.Message.ToString() + "\r\n\r\n"
+                           + "Sub-error:\r\n\r\n"
+                           + suberror.ErrId.ToString() + "\r\n";
+
+                        for (int i = 0; i < suberror.ErrorAttributes.Length; i++)
+                        {
+                            errMess += "\r\n\t" + suberror.ErrorAttributeNames()[i] + ": " + suberror.ErrorAttributes[i];
+                        }
+                        errMess += "==============================\r\n";
+                    }
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(errMess);
+                }
+                catch (WebException ex)
+                {
+                    string errMess = ex.Message.ToString() +
+                       "\r\n\r\nError connecting to Project Server. Please check the URL, your permissions\r\n"
+                    + "to connect to the server, and the Project Server Queuing Service.\r\n";
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("Error: " + errMess);
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("Error: " + ex.Message);
+                }
+                finally
+                {
+                    Console.ResetColor();
+
+                }
+                #endregion
+            }
+
+#if DEBUG
+            // may want to get rid of this for automation?
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+#endif
+
+        }
+
+        // Returns true if arguments are valid, false if there's a problem.
+        static private bool ParseArgs(string[] args)
+        {
+
             bool validArgs = true;
             bool hasURL = false;
             bool hasFile = false;
@@ -131,245 +222,202 @@ namespace BulkProjectDelete
             {
                 validArgs = false;
             }
-            #endregion
 
-            if (!validArgs)
+            return validArgs;
+        }
+
+        static private void SetupWebSvc()
+        {
+
+            //ProjectServerUrl = "http://servername/pwa/";
+
+            // Set up the Web service objects
+            projectSvc = new ProjectWebSvc.Project();
+            projectSvc.Url = projectServerUrl + PROJECT_SERVICE_PATH;
+            projectSvc.UseDefaultCredentials = true;
+
+            queueSvc = new QueueSystemWebSvc.QueueSystem();
+            queueSvc.Url = projectServerUrl + QUEUESYSTEM_SERVICE_PATH;
+            queueSvc.UseDefaultCredentials = true;
+
+            archiveSvc = new ArchiveWebSvc.Archive();
+            archiveSvc.Url = projectServerUrl + PROJECT_ARCHIVE_PATH;
+            archiveSvc.UseDefaultCredentials = true;
+
+        }
+
+        static private void ReadProjectsFromServer()
+        {
+
+            Console.WriteLine("Connecting to Project Server to retrieve project list...");
+
+            // Read all the projects on the server
+
+            if (!deleteArchived)
             {
-                Console.WriteLine(usageHelp);
+                // was allProjects = projectSvc.ReadProjectList();
+                allProjects = projectSvc.ReadProjectStatus(
+                             Guid.Empty,
+                             ProjectWebSvc.DataStoreEnum.WorkingStore,
+                             string.Empty,
+                             (int)PSLibrary.Project.ProjectType.Project);
+
             }
             else
             {
+                allArchiveProjects = archiveSvc.ReadArchivedProjectsList();
+            }
+        }
 
-                try
+        static private void ReadInputFile()
+        {
+            Console.WriteLine("Reading input file...");
+
+            StreamReader SR;
+            int inputLines = 0;
+
+            string projName;
+            SR = File.OpenText(inputFilePath);
+            projName = SR.ReadLine();
+
+            while (projName != null)
+            {
+                projName = projName.Trim();
+                if (!("".Equals(projName)))  //skip empty lines.
                 {
+                    bool foundProject = false;
+                    inputLines++;
 
-                    #region Web Service Setup
-                    //ProjectServerUrl = "http://servername/pwa/";
-                    Guid jobId;
-
-                    // Set up the Web service objects
-                    ProjectWebSvc.Project projectSvc = new ProjectWebSvc.Project();
-                    projectSvc.Url = projectServerUrl + PROJECT_SERVICE_PATH;
-                    projectSvc.UseDefaultCredentials = true;
-
-                    QueueSystemWebSvc.QueueSystem q = new QueueSystemWebSvc.QueueSystem();
-                    q.Url = projectServerUrl + QUEUESYSTEM_SERVICE_PATH;
-                    q.UseDefaultCredentials = true;
-
-                    ArchiveWebSvc.Archive archiveSvc = new ArchiveWebSvc.Archive();
-                    archiveSvc.Url = projectServerUrl + PROJECT_ARCHIVE_PATH;
-                    archiveSvc.UseDefaultCredentials = true;
-
-                    #endregion
-
-                    #region Read Project List from Server
-                    Console.WriteLine("Connecting to Project Server to retrieve project list...");
-
-                    // Read all the projects on the server
-                    
                     if (!deleteArchived)
                     {
-                        // was allProjects = projectSvc.ReadProjectList();
-                        allProjects = projectSvc.ReadProjectStatus(
-                                     Guid.Empty,
-                                     ProjectWebSvc.DataStoreEnum.WorkingStore,
-                                     string.Empty,
-                                     (int)PSLibrary.Project.ProjectType.Project);
-
-                    } else
-                    {
-                        allArchiveProjects = archiveSvc.ReadArchivedProjectsList();
-                    }
-                    #endregion
-
-
-                    #region Read text input file and find projects
-                    Console.WriteLine("Reading input file...");
-
-                    StreamReader SR;
-                    int inputLines = 0;
-                    int projectsNotFound = 0;
-                    string projName;
-                    SR = File.OpenText(inputFilePath);
-                    projName = SR.ReadLine().Trim();
-
-                    while (projName != null)
-                    {
-                        bool foundProject = false;
-                        inputLines++;
-
-                        if (!deleteArchived)
+                        // loop through the dataset looking for a matching project.
+                        foreach (DataRow projectRow in allProjects.Project)
                         {
-                            // loop through the dataset looking for a matching project.
-                            foreach (DataRow projectRow in allProjects.Project)
+                            if (((String)projectRow[allProjects.Project.PROJ_NAMEColumn]).ToLower()
+                                .Equals(projName.ToLower()))
                             {
-                                if (((String)projectRow[allProjects.Project.PROJ_NAMEColumn]).ToLower()
-                                    .Equals(projName.ToLower()))
-                                {
-                                    foundProject = true;
-                                    ProjectNames.Add((String)projectRow[allProjects.Project.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[allProjects.Project.PROJ_UIDColumn]);
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            foreach (DataRow projectRow in allArchiveProjects.Projects)
-                            {
-                                if (((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]).ToLower()
-                                    .Equals(projName.ToLower()))
-                                {
-                                    foundProject = true;
-                                    ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
-                                    ProjectVersionGuids.Add(
-                                        (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
-
-                                    // Don't break: There might be multiple rows that match this project, for multiple versions
-                                }
-                            }
-                        }
-
-                        if (foundProject)
-                        {
-                            Console.WriteLine("Found: " + projName);
-                        }
-                        else
-                        {
-                            projectsNotFound++;
-                            Console.WriteLine("FAILED to find: " + projName);
-                        }
-
-                        projName = SR.ReadLine();
-                    }
-                    SR.Close();
-                    #endregion
-
-                    #region Confirm Project deletion
-                    //Console.WriteLine(inputLines.ToString() + " lines were read from input file.";
-                    Console.WriteLine(projectsNotFound.ToString() + " projects listed in the input file were not found.");
-                    if (!deleteArchived)
-                    {
-                        Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from draft and published dbs");
-                        Console.WriteLine("   (out of " + allProjects.Project.Count.ToString() + " projects on the server.)");
-
-                    }
-                    else
-                    {
-                        Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from archive db");
-                        Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " projects in the Archive db.)");
-                        Console.WriteLine(" Note that a project may be counted multiple times: multiple versions may\n be present in the archive db.");
-                    }
-
-                    if (!verify && ProjectNames.Count > 0)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("WARNING! About to delete projects. This action is not reversible!");
-                        Console.ResetColor();
-                        Console.Write("Enter Y if you want to continue: ");
-                        string confirm = Console.ReadLine();
-                        if (!("y".Equals(confirm.ToLower())))
-                        {
-                            verify = true;
-                        }
-                    }
-
-                    #endregion
-
-
-                    #region Delete Project
-
-                    if (!verify && ProjectNames.Count > 0)
-                    {
-                        Console.WriteLine("Beginning to delete projects...");
-
-                        Guid[] deleteGuid = new Guid[1];
-                        for (int i = 0; i < ProjectGuids.Count; i++)
-                        {
-
-                            jobId = Guid.NewGuid();
-                            if (!deleteArchived)
-                            {
-                                deleteGuid[0] = ProjectGuids[i];
-                                projectSvc.QueueDeleteProjects(jobId, deleteWssSites, deleteGuid, true);
-                            }
-                            else
-                            {
-                                // Note the bug below: the Guids must be handed in the wrong positions!
-                                // If they are reversed, the queue reports success, but nothing is deleted.
-
-                                archiveSvc.QueueDeleteArchivedProject(
-                                     jobId,
-                                     ProjectVersionGuids[i],
-                                     ProjectGuids[i]);
-
-                            }
-                            Console.WriteLine("Queued delete for: " + ProjectNames[i]);
-                            if (wait)
-                            {
-                                WaitForQueue(q, jobId);
+                                foundProject = true;
+                                ProjectNames.Add((String)projectRow[allProjects.Project.PROJ_NAMEColumn]);
+                                ProjectGuids.Add((Guid)projectRow[allProjects.Project.PROJ_UIDColumn]);
+                                break;
                             }
                         }
                     }
                     else
                     {
-                        Console.WriteLine("No deletes. Verifying only.");
-                    }
-                    #endregion
-
-                    Console.WriteLine("Execution Complete.");
-                }
-                #region Exceptions and Final
-                // This region is from MSDN, but with minor modifications to the messages:
-                // http://msdn.microsoft.com/en-us/library/websvcproject.project.queuedeleteprojects.aspx
-
-                catch (SoapException ex)
-                {
-                    PSLibrary.PSClientError error = new PSLibrary.PSClientError(ex);
-                    PSLibrary.PSErrorInfo[] errors = error.GetAllErrors();
-                    string errMess = "==============================\r\nError: \r\n";
-                    for (int i = 0; i < errors.Length; i++)
-                    {
-                        errMess += "\n" + ex.Message.ToString() + "\r\n";
-                        errMess += "".PadRight(30, '=') + "\r\nPSCLientError Output:\r\n \r\n";
-                        errMess += errors[i].ErrId.ToString() + "\n";
-
-                        for (int j = 0; j < errors[i].ErrorAttributes.Length; j++)
+                        foreach (DataRow projectRow in allArchiveProjects.Projects)
                         {
-                            errMess += "\r\n\t" + errors[i].ErrorAttributeNames()[j] + ": " + errors[i].ErrorAttributes[j];
-                        }
-                        errMess += "\r\n".PadRight(30, '=');
-                    }
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine(errMess);
-                }
-                catch (WebException ex)
-                {
-                    string errMess = ex.Message.ToString() +
-                       "\n\nError connecting to Project Server. Please check the URL, your permissions\n"
-                    + "to connect to the server, and the Project Server Queuing Service.\n";
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Error: " + errMess);
-                }
-                catch (Exception ex)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Error: " + ex.Message);
-                }
-                finally
-                {
-                    Console.ResetColor();
+                            if (((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]).ToLower()
+                                .Equals(projName.ToLower()))
+                            {
+                                foundProject = true;
+                                ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
+                                ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
+                                ProjectVersionGuids.Add(
+                                    (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
 
+                                // Don't break: There might be multiple rows that match this project, for multiple versions
+                            }
+                        }
+                    }
+
+                    if (foundProject)
+                    {
+                        Console.WriteLine("Found: " + projName);
+                    }
+                    else
+                    {
+                        projectsNotFound++;
+                        Console.WriteLine("FAILED to find: " + projName);
+                    }
                 }
-                #endregion
+                projName = SR.ReadLine();
+            }
+            SR.Close();
+        }
+
+        static private void WriteSummary()
+        {
+            //Console.WriteLine(inputLines.ToString() + " lines were read from input file.";
+            if (projectsNotFound > 0)
+            {
+                Console.WriteLine(projectsNotFound.ToString() + " projects listed in the input file were not found.");
+            }
+            else
+            {
+                Console.WriteLine("All projects listed in input file were found.");
             }
 
-            // may want to get rid of this for automation?
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+            if (!deleteArchived)
+            {
+                Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from draft and published dbs");
+                Console.WriteLine("   (out of " + allProjects.Project.Count.ToString() + " projects on the server.)");
 
+            }
+            else
+            {
+                Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from archive db");
+                Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " projects in the Archive db.)");
+                Console.WriteLine(" Note that a project may be counted multiple times: multiple versions may\n be present in the archive db.");
+            }
         }
+
+        static private bool Confirm()
+        {
+            // Confirm Project deletion
+            //return true if want to continue.
+            
+            if (!verify && ProjectNames.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("WARNING! About to delete projects. This action is not reversible!");
+                Console.ResetColor();
+                Console.Write("Enter Y if you want to continue: ");
+                string confirm = Console.ReadLine();
+                if ("y".Equals(confirm.ToLower()))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        static private void DeleteProjects()
+        {
+
+                Guid jobId;
+                Console.WriteLine("Beginning to delete projects...");
+
+                Guid[] deleteGuid = new Guid[1];
+                for (int i = 0; i < ProjectGuids.Count; i++)
+                {
+
+                    jobId = Guid.NewGuid();
+                    if (!deleteArchived)
+                    {
+                        deleteGuid[0] = ProjectGuids[i];
+                        projectSvc.QueueDeleteProjects(jobId, deleteWssSites, deleteGuid, true);
+                    }
+                    else
+                    {
+                        // Note the bug below: the Guids must be handed in the wrong positions!
+                        // If they are reversed, the queue reports success, but nothing is deleted.
+
+                        archiveSvc.QueueDeleteArchivedProject(
+                             jobId,
+                             ProjectVersionGuids[i],
+                             ProjectGuids[i]);
+
+                    }
+                    Console.WriteLine("Queued delete for: " + ProjectNames[i]);
+                    if (wait)
+                    {
+                        WaitForQueue(queueSvc, jobId);
+                    }
+                }
+            }
+
 
         static private void WaitForQueue(QueueSystemWebSvc.QueueSystem q, Guid jobId)
         {
@@ -412,12 +460,12 @@ namespace BulkProjectDelete
                         // Used to throw exception, but now just displaying error.
                         //throw (new ApplicationException("Queue request " + jobState + " for Job ID " + jobId + ".\r\n" + xmlError));
                         Console.ForegroundColor = ConsoleColor.DarkRed;
-                        Console.WriteLine("Queue Job failed.");
+                        Console.WriteLine("Queue Job failed. See the server Manage Queue interface for more\r\ninformation.");
                         Console.ResetColor();
                     }
                     else
                     {
-                        Console.WriteLine("Job State: " + jobState + " for Job ID: " + jobId);
+                        Console.WriteLine("Status: " + jobState + "   (Job ID: " + jobId + ")");
                         wait = q.GetJobWaitTime(jobId);
 
                         // - Wait for it
@@ -427,10 +475,7 @@ namespace BulkProjectDelete
                 }
             }
             while (!jobDone);
-        }
+}
 
     }
-
-
-
 }

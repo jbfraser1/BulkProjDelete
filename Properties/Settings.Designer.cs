@@ -26,7 +26,7 @@ namespace BulkProjectDelete.Properties {
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.WebServiceUrl)]
-        [global::System.Configuration.DefaultSettingValueAttribute("http://mazzdev_2k8_vs/pwa/_vti_bin/psi/QueueSystem.asmx")]
+        [global::System.Configuration.DefaultSettingValueAttribute("http://devserver/pwa/_vti_bin/psi/QueueSystem.asmx")]
         public string ProjectDelete_QueueSystemWebSvc_QueueSystem {
             get {
                 return ((string)(this["ProjectDelete_QueueSystemWebSvc_QueueSystem"]));
@@ -36,7 +36,7 @@ namespace BulkProjectDelete.Properties {
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.WebServiceUrl)]
-        [global::System.Configuration.DefaultSettingValueAttribute("http://mazzdev_2k8_vs/pwa/_vti_bin/psi/project.asmx")]
+        [global::System.Configuration.DefaultSettingValueAttribute("http://devserver/pwa/_vti_bin/psi/project.asmx")]
         public string ProjectDelete_ProjectWebSvc_Project {
             get {
                 return ((string)(this["ProjectDelete_ProjectWebSvc_Project"]));
@@ -46,7 +46,7 @@ namespace BulkProjectDelete.Properties {
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.WebServiceUrl)]
-        [global::System.Configuration.DefaultSettingValueAttribute("http://mazzdev_2k8_vs/pwa/_vti_bin/psi/Archive.asmx")]
+        [global::System.Configuration.DefaultSettingValueAttribute("http://devserver/pwa/_vti_bin/psi/Archive.asmx")]
         public string ProjectDelete_ArchiveWebSvc_Archive {
             get {
                 return ((string)(this["ProjectDelete_ArchiveWebSvc_Archive"]));
