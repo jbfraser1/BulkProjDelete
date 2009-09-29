@@ -277,7 +277,8 @@ namespace BulkProjectDelete
             int inputLines = 0;
 
             string projName;
-            SR = File.OpenText(inputFilePath);
+            SR = new StreamReader(inputFilePath, Encoding.Default, true);
+
             projName = SR.ReadLine();
 
             while (projName != null)
