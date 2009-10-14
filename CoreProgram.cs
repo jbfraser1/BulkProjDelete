@@ -44,7 +44,10 @@ namespace BulkProjectDelete
         static bool verify = false;   //true if parameter is set.
 
 
-        static ProjectWebSvc.ProjectDataSet allProjects = null;
+        static ProjectWebSvc.ProjectDataSet projectProjects = null;
+        static ProjectWebSvc.ProjectDataSet masterProjects = null;
+        static ProjectWebSvc.ProjectDataSet lightweightProjects = null;
+        static ProjectWebSvc.ProjectDataSet insertedProjects = null;
         static ArchiveWebSvc.ArchivedProjectsDataSet allArchiveProjects = null;
         static List<string> ProjectNames = new List<string>();
         static List<Guid> ProjectGuids = new List<Guid>();
@@ -256,11 +259,31 @@ namespace BulkProjectDelete
             if (!deleteArchived)
             {
                 // was allProjects = projectSvc.ReadProjectList();
-                allProjects = projectSvc.ReadProjectStatus(
+                projectProjects = projectSvc.ReadProjectStatus(
                              Guid.Empty,
                              ProjectWebSvc.DataStoreEnum.WorkingStore,
                              string.Empty,
                              (int)PSLibrary.Project.ProjectType.Project);
+
+                // Need to handle three other types of projects:
+                masterProjects = projectSvc.ReadProjectStatus(
+                         Guid.Empty,
+                         ProjectWebSvc.DataStoreEnum.WorkingStore,
+                         string.Empty,
+                         (int)PSLibrary.Project.ProjectType.MasterProject);
+
+                lightweightProjects = projectSvc.ReadProjectStatus(
+                         Guid.Empty,
+                         ProjectWebSvc.DataStoreEnum.WorkingStore,
+                         string.Empty,
+                         (int)PSLibrary.Project.ProjectType.LightWeightProject);
+
+                insertedProjects = projectSvc.ReadProjectStatus(
+                         Guid.Empty,
+                         ProjectWebSvc.DataStoreEnum.WorkingStore,
+                         string.Empty,
+                         (int)PSLibrary.Project.ProjectType.InsertedProject);
+
 
             }
             else
@@ -292,15 +315,60 @@ namespace BulkProjectDelete
                     if (!deleteArchived)
                     {
                         // loop through the dataset looking for a matching project.
-                        foreach (DataRow projectRow in allProjects.Project)
+                        foreach (DataRow projectRow in projectProjects.Project)
                         {
-                            if (((String)projectRow[allProjects.Project.PROJ_NAMEColumn]).ToLower()
+                            if (((String)projectRow[projectProjects.Project.PROJ_NAMEColumn]).ToLower()
                                 .Equals(projName.ToLower()))
                             {
                                 foundProject = true;
-                                ProjectNames.Add((String)projectRow[allProjects.Project.PROJ_NAMEColumn]);
-                                ProjectGuids.Add((Guid)projectRow[allProjects.Project.PROJ_UIDColumn]);
+                                ProjectNames.Add((String)projectRow[projectProjects.Project.PROJ_NAMEColumn]);
+                                ProjectGuids.Add((Guid)projectRow[projectProjects.Project.PROJ_UIDColumn]);
                                 break;
+                            }
+                        }
+                        // masterprojects.
+                        if (!foundProject)
+                        {
+                            foreach (DataRow projectRow in masterProjects.Project)
+                            {
+                                if (((String)projectRow[masterProjects.Project.PROJ_NAMEColumn]).ToLower()
+                                    .Equals(projName.ToLower()))
+                                {
+                                    foundProject = true;
+                                    ProjectNames.Add((String)projectRow[masterProjects.Project.PROJ_NAMEColumn]);
+                                    ProjectGuids.Add((Guid)projectRow[masterProjects.Project.PROJ_UIDColumn]);
+                                    break;
+                                }
+                            }
+                        }
+                        // lightweightprojects.
+                        if (!foundProject)
+                        {
+                            foreach (DataRow projectRow in lightweightProjects.Project)
+                            {
+                                if (((String)projectRow[lightweightProjects.Project.PROJ_NAMEColumn]).ToLower()
+                                    .Equals(projName.ToLower()))
+                                {
+                                    foundProject = true;
+                                    ProjectNames.Add((String)projectRow[lightweightProjects.Project.PROJ_NAMEColumn]);
+                                    ProjectGuids.Add((Guid)projectRow[lightweightProjects.Project.PROJ_UIDColumn]);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!foundProject)
+                        {
+                            //sub projects
+                            foreach (DataRow projectRow in insertedProjects.Project)
+                            {
+                                if (((String)projectRow[insertedProjects.Project.PROJ_NAMEColumn]).ToLower()
+                                    .Equals(projName.ToLower()))
+                                {
+                                    foundProject = true;
+                                    ProjectNames.Add((String)projectRow[insertedProjects.Project.PROJ_NAMEColumn]);
+                                    ProjectGuids.Add((Guid)projectRow[insertedProjects.Project.PROJ_UIDColumn]);
+                                    break;
+                                }
                             }
                         }
                     }
@@ -339,6 +407,7 @@ namespace BulkProjectDelete
 
         static private void WriteSummary()
         {
+           
             //Console.WriteLine(inputLines.ToString() + " lines were read from input file.";
             if (projectsNotFound > 0)
             {
@@ -351,8 +420,12 @@ namespace BulkProjectDelete
 
             if (!deleteArchived)
             {
+                int projectsOnServer = projectProjects.Project.Count +
+                    masterProjects.Project.Count +
+                    lightweightProjects.Project.Count +
+                    insertedProjects.Project.Count;
                 Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from draft and published dbs");
-                Console.WriteLine("   (out of " + allProjects.Project.Count.ToString() + " projects on the server.)");
+                Console.WriteLine("   (out of " + projectsOnServer.ToString() + " projects on the server.)");
 
             }
             else
@@ -411,7 +484,9 @@ namespace BulkProjectDelete
                              ProjectGuids[i]);
 
                     }
-                    Console.WriteLine("Queued delete for: " + ProjectNames[i]);
+                    Console.WriteLine("Queued delete for: " +
+                        "(" + i.ToString() + " of " + ProjectGuids.Count.ToString() +") "
+                        + ProjectNames[i]);
                     if (wait)
                     {
                         WaitForQueue(queueSvc, jobId);
@@ -431,6 +506,7 @@ namespace BulkProjectDelete
             bool jobDone = false;
             string xmlError = string.Empty;
             int wait = 0;
+            int loop = 0;
 
             //Wait for the project to get through the queue
             // - Get the estimated wait time in seconds
@@ -467,6 +543,13 @@ namespace BulkProjectDelete
                     else
                     {
                         Console.WriteLine("Status: " + jobState + "   (Job ID: " + jobId + ")");
+                        loop++;
+                        if (loop >= 10)
+                        {
+                            loop = 0;
+                            Console.WriteLine("Continuing to wait for Project Server Queue...");
+                            Console.WriteLine("<CTRL> + C will halt the BulkProjectDelete process.");
+                        }
                         wait = q.GetJobWaitTime(jobId);
 
                         // - Wait for it
