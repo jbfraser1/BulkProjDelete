@@ -485,7 +485,7 @@ namespace BulkProjectDelete
 
                     }
                     Console.WriteLine("Queued delete for: " +
-                        "(" + i.ToString() + " of " + ProjectGuids.Count.ToString() +") "
+                        "(" + (i+1).ToString() + " of " + ProjectGuids.Count.ToString() +") "
                         + ProjectNames[i]);
                     if (wait)
                     {
