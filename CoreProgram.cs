@@ -19,20 +19,19 @@ namespace BulkProjectDelete
             + "Usage: BulkProjectDelete -url http[s]://PWAServer/pwa/ -inputfile path\\filename\r\n"
             + "       [-deletewsssites] [-deletearchived] [-wait] [-verify]\r\n\r\n"
             + "Options:\r\n"
-            + "   -url pwaurl      Specify the url for the PWA instance on which to delete\r\n"
-            + "                       sites. Required.\r\n"
-            + "   -inputfile path  Specify a text file listing projects to be deleted.\r\n"
-            + "                       Each project should be on a separate line. Required.\r\n"
-            + "   -deletewsssites  WSS sites related to the deleted projects will be\r\n"
-            + "                       deleted as well. Ignored if -deletearchived is used.\r\n"
-            + "   -deletearchived  The projects are deleted from the archive database. If\r\n"
-            + "                       not present, projects are deleted from the draft and\r\n"
-            + "                       published databases.\r\n"
-            + "   -wait            Execution will pause until Project Server processes\r\n"
-            + "                      each job.\r\n"
-            + "   -verify          Command will not actually delete projects or WSS sites.\r\n\r\n"
+            + "   -url pwaurl      Url for the PWA instance. Required.\r\n"
+            + "   -inputfile path  Specifies a text file listing projects to be deleted.\r\n"
+            + "                     Each project should be on a separate line. Required.\r\n"
+            + "   -deletewsssites  Deletes project workspaces for specifed projects. Ignored\r\n"
+            + "                     if -deletearchived is used.\r\n"
+            + "   -deletearchived  Projects are deleted only from the archive database. If not\r\n"
+            + "                     present, projects are deleted from draft & published dbs.\r\n"
+            + "   -keeplatest      Works with -deletearchived option. The most recent copy of\r\n"
+            + "                     a project in the archive db will not be deleted.\r\n"
+            + "   -wait            Wait for the server to finish each job.\r\n"
+            + "   -verify          No deletions will be performed.\r\n\r\n"
             + "Example:\r\n"
-            + "   deleteprojects -url https://server/pwa/ -file c:\\temp\\oldprojects.txt\r\n"
+            + "   BulkProjectDelete -url https://server/pwa/ -file c:\\temp\\oldprojects.txt\r\n"
             + "         -deletewsssites\r\n\r\n";
 
 
@@ -42,6 +41,7 @@ namespace BulkProjectDelete
         static bool deleteArchived = false;  // true if parameter is set
         static bool wait = false;    //true if parameter is set.
         static bool verify = false;   //true if parameter is set.
+        static bool keeplatest = false; //true if parameter is set.
 
 
         static ProjectWebSvc.ProjectDataSet projectProjects = null;
@@ -53,6 +53,7 @@ namespace BulkProjectDelete
         static List<Guid> ProjectGuids = new List<Guid>();
         static List<Guid> ProjectVersionGuids = new List<Guid>();
         static int projectsNotFound = 0;
+        static int keepLatestCount = 0; //count of projects that will be kept if keeplatest is selected.
 
 
         const string PROJECT_SERVICE_PATH = "_vti_bin/psi/project.asmx";
@@ -208,6 +209,9 @@ namespace BulkProjectDelete
                     case "deletearchived":
                         deleteArchived = true;
                         break;
+                    case "keeplatest":
+                        keeplatest = true;
+                        break;
                     case "wait":
                         wait = true;
                         break;
@@ -292,6 +296,10 @@ namespace BulkProjectDelete
             }
         }
 
+        /// <summary>
+        /// Reads the input file and matches the projects to the project lists read from the Project Server.
+        /// Needs to be broken into smaller methods.
+        /// </summary>
         static private void ReadInputFile()
         {
             Console.WriteLine("Reading input file...");
@@ -372,20 +380,64 @@ namespace BulkProjectDelete
                             }
                         }
                     }
-                    else
+                    else  //deleting archived projects.
                     {
                         foreach (DataRow projectRow in allArchiveProjects.Projects)
                         {
                             if (((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]).ToLower()
                                 .Equals(projName.ToLower()))
                             {
-                                foundProject = true;
-                                ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
-                                ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
-                                ProjectVersionGuids.Add(
-                                    (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
+                                
+                                if (keeplatest) 
+                                {
+                                    // need to look through the archive projects for one with the same project UID but a more recent version date.
+                                    // if not found, don't delete.
+                                    bool OldVersion = false; // only set to true once we know that there is a newer project
+                                    DateTime DateInQuestion = (DateTime)projectRow[allArchiveProjects.Projects.PROJ_VERSION_DATEColumn];
 
-                                // Don't break: There might be multiple rows that match this project, for multiple versions
+                                    // the Project Version uid stores a UID that will be shared by multiple versions of the same project. Seems to be a bug in Projects Server.
+                                 // http://www.dotnetzone.gr/cs/blogs/pkanavos/archive/2009/02/02/project-server-curios-the-queuedeletearchivedproject-method.aspx
+
+                                    Guid GuidInQuestion = (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn];
+
+                                    foreach (DataRow maybeNewerProject in allArchiveProjects.Projects)
+                                    {
+                                        if (GuidInQuestion.Equals(
+                                            (Guid)maybeNewerProject[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]))
+                                        {
+                                            DateTime maybeNewerDate = (DateTime)maybeNewerProject[allArchiveProjects.Projects.PROJ_VERSION_DATEColumn];
+
+                                            if (DateTime.Compare(DateInQuestion, maybeNewerDate) < 0)
+                                            {
+                                                OldVersion = true;
+                                                foundProject = true;
+                                                ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
+                                                ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
+                                                ProjectVersionGuids.Add(
+                                                      (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (!OldVersion)
+                                    {
+                                        // increase count of projects that are the latest version.
+                                        keepLatestCount++;
+                                    }
+                                } else
+                                {
+                                    // not keeping latest, don't need to compare to other projects in the archive set.
+
+                                    foundProject = true;
+
+                                    ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
+                                    ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
+                                    ProjectVersionGuids.Add(
+                                        (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
+
+                                    // Don't break: There might be multiple rows that match this project, for multiple versions
+                                }
                             }
                         }
                     }
@@ -431,8 +483,12 @@ namespace BulkProjectDelete
             else
             {
                 Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from archive db");
-                Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " projects in the Archive db.)");
-                Console.WriteLine(" Note that a project may be counted multiple times: multiple versions may\n be present in the archive db.");
+                Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " projects in the archive db.)");
+                if (keeplatest)
+                {
+                    Console.WriteLine("   " + keepLatestCount.ToString() + " projects were found to be the latest version. They will\n   be kept.");
+                }
+                Console.WriteLine(" Note that a project may be counted multiple times: multiple versions may\n   be present in the archive db.");
             }
         }
 
@@ -493,7 +549,6 @@ namespace BulkProjectDelete
                     }
                 }
             }
-
 
         static private void WaitForQueue(QueueSystemWebSvc.QueueSystem q, Guid jobId)
         {
