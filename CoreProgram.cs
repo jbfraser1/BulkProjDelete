@@ -296,26 +296,27 @@ namespace BulkProjectDelete
             }
         }
 
-        /// <summary>
-        /// Reads the input file and matches the projects to the project lists read from the Project Server.
-        /// Needs to be broken into smaller methods.
-        /// </summary>
+        
+        // Reads the input file and matches the projects to the project lists read from the Project Server.
+        // This method is responsible for building the GUID and Project lists which live in global variables.
+        // 
+        // Needs to be broken into smaller methods.
         static private void ReadInputFile()
         {
             Console.WriteLine("Reading input file...");
 
             StreamReader SR;
-            int inputLines = 0;
+            int inputLines = 0; // used for tracking for the status message.
 
-            string projName;
+            string inputProjName;
             SR = new StreamReader(inputFilePath, Encoding.Default, true);
 
-            projName = SR.ReadLine();
+            inputProjName = SR.ReadLine();
 
-            while (projName != null)
+            while (inputProjName != null)
             {
-                projName = projName.Trim();
-                if (!("".Equals(projName)))  //skip empty lines.
+                inputProjName = inputProjName.Trim();
+                if (!("".Equals(inputProjName)))  //skip empty lines.
                 {
                     bool foundProject = false;
                     inputLines++;
@@ -323,98 +324,69 @@ namespace BulkProjectDelete
                     if (!deleteArchived)
                     {
                         // loop through the dataset looking for a matching project.
-                        foreach (DataRow projectRow in projectProjects.Project)
+                        foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in projectProjects.Project)
                         {
-                            if (((String)projectRow[projectProjects.Project.PROJ_NAMEColumn]).ToLower()
-                                .Equals(projName.ToLower()))
-                            {
-                                foundProject = true;
-                                ProjectNames.Add((String)projectRow[projectProjects.Project.PROJ_NAMEColumn]);
-                                ProjectGuids.Add((Guid)projectRow[projectProjects.Project.PROJ_UIDColumn]);
-                                break;
-                            }
+                            foundProject = CheckForMatch(inputProjName, projRow);
                         }
+
                         // masterprojects.
                         if (!foundProject)
                         {
-                            foreach (DataRow projectRow in masterProjects.Project)
+                            foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in masterProjects.Project)
                             {
-                                if (((String)projectRow[masterProjects.Project.PROJ_NAMEColumn]).ToLower()
-                                    .Equals(projName.ToLower()))
-                                {
-                                    foundProject = true;
-                                    ProjectNames.Add((String)projectRow[masterProjects.Project.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[masterProjects.Project.PROJ_UIDColumn]);
-                                    break;
-                                }
+                                foundProject = CheckForMatch(inputProjName, projRow);
                             }
                         }
+
                         // lightweightprojects.
                         if (!foundProject)
                         {
-                            foreach (DataRow projectRow in lightweightProjects.Project)
+                            foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in lightweightProjects.Project)
                             {
-                                if (((String)projectRow[lightweightProjects.Project.PROJ_NAMEColumn]).ToLower()
-                                    .Equals(projName.ToLower()))
-                                {
-                                    foundProject = true;
-                                    ProjectNames.Add((String)projectRow[lightweightProjects.Project.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[lightweightProjects.Project.PROJ_UIDColumn]);
-                                    break;
-                                }
+                                foundProject = CheckForMatch(inputProjName, projRow);
                             }
                         }
+
                         if (!foundProject)
                         {
                             //sub projects
-                            foreach (DataRow projectRow in insertedProjects.Project)
+                            foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in insertedProjects.Project)
                             {
-                                if (((String)projectRow[insertedProjects.Project.PROJ_NAMEColumn]).ToLower()
-                                    .Equals(projName.ToLower()))
-                                {
-                                    foundProject = true;
-                                    ProjectNames.Add((String)projectRow[insertedProjects.Project.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[insertedProjects.Project.PROJ_UIDColumn]);
-                                    break;
-                                }
+                                foundProject = CheckForMatch(inputProjName, projRow);
                             }
                         }
                     }
                     else  //deleting archived projects.
                     {
-                        foreach (DataRow projectRow in allArchiveProjects.Projects)
+                        foreach (ArchiveWebSvc.ArchivedProjectsDataSet.ProjectsRow projRow in allArchiveProjects.Projects)
                         {
-                            if (((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]).ToLower()
-                                .Equals(projName.ToLower()))
+                            if (Matches(inputProjName, projRow.PROJ_NAME))
                             {
-                                
                                 if (keeplatest) 
                                 {
                                     // need to look through the archive projects for one with the same project UID but a more recent version date.
                                     // if not found, don't delete.
                                     bool OldVersion = false; // only set to true once we know that there is a newer project
-                                    DateTime DateInQuestion = (DateTime)projectRow[allArchiveProjects.Projects.PROJ_VERSION_DATEColumn];
+                                    DateTime DateInQuestion = projRow.PROJ_VERSION_DATE;
 
-                                    // the Project Version uid stores a UID that will be shared by multiple versions of the same project. Seems to be a bug in Projects Server.
-                                 // http://www.dotnetzone.gr/cs/blogs/pkanavos/archive/2009/02/02/project-server-curios-the-queuedeletearchivedproject-method.aspx
+     // the Project Version uid stores a UID that will be shared by multiple versions of the same project. Seems to be a bug in Projects Server.
+     // http://www.dotnetzone.gr/cs/blogs/pkanavos/archive/2009/02/02/project-server-curios-the-queuedeletearchivedproject-method.aspx
 
-                                    Guid GuidInQuestion = (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn];
+                                    Guid GuidInQuestion = projRow.PROJ_VERSION_UID;
 
-                                    foreach (DataRow maybeNewerProject in allArchiveProjects.Projects)
+                                    foreach (ArchiveWebSvc.ArchivedProjectsDataSet.ProjectsRow maybeNewerProject in allArchiveProjects.Projects)
                                     {
-                                        if (GuidInQuestion.Equals(
-                                            (Guid)maybeNewerProject[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]))
+                                        if (GuidInQuestion.Equals( maybeNewerProject.PROJ_VERSION_UID))
                                         {
-                                            DateTime maybeNewerDate = (DateTime)maybeNewerProject[allArchiveProjects.Projects.PROJ_VERSION_DATEColumn];
+                                            DateTime maybeNewerDate = maybeNewerProject.PROJ_VERSION_DATE;
 
                                             if (DateTime.Compare(DateInQuestion, maybeNewerDate) < 0)
                                             {
                                                 OldVersion = true;
                                                 foundProject = true;
-                                                ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
-                                                ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
-                                                ProjectVersionGuids.Add(
-                                                      (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
+                                                ProjectNames.Add(projRow.PROJ_NAME);
+                                                ProjectGuids.Add( projRow.PROJ_UID);
+                                                ProjectVersionGuids.Add( projRow.PROJ_VERSION_UID);
                                                 break;
                                             }
                                         }
@@ -430,11 +402,9 @@ namespace BulkProjectDelete
                                     // not keeping latest, don't need to compare to other projects in the archive set.
 
                                     foundProject = true;
-
-                                    ProjectNames.Add((String)projectRow[allArchiveProjects.Projects.PROJ_NAMEColumn]);
-                                    ProjectGuids.Add((Guid)projectRow[allArchiveProjects.Projects.PROJ_UIDColumn]);
-                                    ProjectVersionGuids.Add(
-                                        (Guid)projectRow[allArchiveProjects.Projects.PROJ_VERSION_UIDColumn]);
+                                    ProjectNames.Add(projRow.PROJ_NAME );
+                                    ProjectGuids.Add( projRow.PROJ_UID);
+                                    ProjectVersionGuids.Add(projRow.PROJ_VERSION_UID);
 
                                     // Don't break: There might be multiple rows that match this project, for multiple versions
                                 }
@@ -444,22 +414,21 @@ namespace BulkProjectDelete
 
                     if (foundProject)
                     {
-                        Console.WriteLine("Found: " + projName);
+                        Console.WriteLine("Found: " + inputProjName);
                     }
                     else
                     {
                         projectsNotFound++;
-                        Console.WriteLine("FAILED to find: " + projName);
+                        Console.WriteLine("FAILED to find: " + inputProjName);
                     }
                 }
-                projName = SR.ReadLine();
+                inputProjName = SR.ReadLine();
             }
             SR.Close();
         }
 
         static private void WriteSummary()
         {
-           
             //Console.WriteLine(inputLines.ToString() + " lines were read from input file.";
             if (projectsNotFound > 0)
             {
@@ -482,8 +451,8 @@ namespace BulkProjectDelete
             }
             else
             {
-                Console.WriteLine(ProjectNames.Count.ToString() + " projects will be deleted from archive db");
-                Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " projects in the archive db.)");
+                Console.WriteLine(ProjectNames.Count.ToString() + " project versions will be deleted from archive db");
+                Console.WriteLine("   (out of " + allArchiveProjects.Projects.Count.ToString() + " project versions in the archive db.)");
                 if (keeplatest)
                 {
                     Console.WriteLine("   " + keepLatestCount.ToString() + " projects were found to be the latest version. They will\n   be kept.");
@@ -615,6 +584,48 @@ namespace BulkProjectDelete
             }
             while (!jobDone);
 }
+
+        /// <summary>
+        /// If the project matches the name, then add it to the list of Guids to be removed.
+        /// </summary>
+        /// <param name="s1"></param>
+        /// <param name="s2"></param>
+        /// <returns>true if name matches and project was added to the list to delete.</returns>
+        static private bool CheckForMatch(string projectName, ProjectWebSvc.ProjectDataSet.ProjectRow projectRow)
+        {
+            bool foundProject = false;
+
+            if (Matches(projectName, projectRow.PROJ_NAME))
+            {
+                foundProject = true;
+                ProjectNames.Add(projectRow.PROJ_NAME);
+                ProjectGuids.Add(projectRow.PROJ_UID);
+            }
+
+            return foundProject;
+        }
+
+        static private bool CheckForMatch(string projectName, ProjectWebSvc.ProjectDataSet.ProjectDataTable projectDT)
+        {
+
+            foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projectRow in projectDT)
+            {
+                if (Matches(projectName, projectRow.PROJ_NAME))
+                {
+                    ProjectNames.Add(projectRow.PROJ_NAME);
+                    ProjectGuids.Add(projectRow.PROJ_UID);
+                    return true;
+                }
+            }
+
+            return false; // not found.
+        }
+
+
+        static private bool Matches(String s1, String s2)
+        {
+            return s1.ToLower().Equals(s2.ToLower());
+        }
 
     }
 }
