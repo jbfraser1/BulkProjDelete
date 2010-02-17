@@ -327,6 +327,8 @@ namespace BulkProjectDelete
                         foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in projectProjects.Project)
                         {
                             foundProject = CheckForMatch(inputProjName, projRow);
+                            if (foundProject)
+                                break;
                         }
 
                         // masterprojects.
@@ -335,6 +337,8 @@ namespace BulkProjectDelete
                             foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in masterProjects.Project)
                             {
                                 foundProject = CheckForMatch(inputProjName, projRow);
+                                if (foundProject)
+                                    break;
                             }
                         }
 
@@ -344,6 +348,8 @@ namespace BulkProjectDelete
                             foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in lightweightProjects.Project)
                             {
                                 foundProject = CheckForMatch(inputProjName, projRow);
+                                if (foundProject)
+                                    break;
                             }
                         }
 
@@ -353,6 +359,8 @@ namespace BulkProjectDelete
                             foreach (ProjectWebSvc.ProjectDataSet.ProjectRow projRow in insertedProjects.Project)
                             {
                                 foundProject = CheckForMatch(inputProjName, projRow);
+                                if (foundProject)
+                                    break;
                             }
                         }
                     }
