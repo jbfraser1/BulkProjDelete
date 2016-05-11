@@ -1,4 +1,4 @@
-# BulkProjDelete
+# Bulk Project Delete
 ##Project Description
 
 A command line .exe that allows the scripted deletion of projects from a Project Server 2007 installation. Useful for bulk project
@@ -60,7 +60,3 @@ have access to this. If you need to run it on a client machine, you should copy 
 
 The .exe uses the identity of whomever is logged in and executing it to access Project Server. This identity should be a
 valid Project Server user with permissions to delete the appropriate projects.
-
-###Primary Author
-
-James Fraser
